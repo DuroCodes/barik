@@ -4,8 +4,6 @@ struct BatteryWidget: View {
     @EnvironmentObject var configProvider: ConfigProvider
     var config: ConfigData { configProvider.config }
     var showPercentage: Bool { config["show-percentage"]?.boolValue ?? true }
-    var warningLevel: Int { config["warning-level"]?.intValue ?? 20 }
-    var criticalLevel: Int { config["critical-level"]?.intValue ?? 10 }
 
     @ObservedObject private var batteryManager = BatteryManager.shared
     private var level: Int { batteryManager.batteryLevel }
@@ -15,138 +13,104 @@ struct BatteryWidget: View {
     @State private var rect: CGRect = CGRect()
 
     var body: some View {
-        ZStack {
-            ZStack(alignment: .leading) {
-                BatteryBodyView(mask: false)
-                    .opacity(showPercentage ? 0.3 : 0.4)
-                BatteryBodyView(mask: true)
-                    .clipShape(
-                        Rectangle().path(
-                            in: CGRect(
-                                x: showPercentage ? 0 : 2,
-                                y: 0,
-                                width: 30 * Int(level)
-                                    / (showPercentage ? 110 : 130),
-                                height: .bitWidth
-                            )
-                        )
-                    )
-                    .foregroundStyle(batteryColor)
-                BatteryText(
-                    level: level, isCharging: isCharging,
-                    isPluggedIn: isPluggedIn
-                )
-                .foregroundStyle(batteryTextColor)
-            }
-            .frame(width: 30, height: 10)
-            .background(
-                GeometryReader { geometry in
-                    Color.clear
-                        .onAppear {
-                            rect = geometry.frame(in: .global)
-                        }
-                        .onChange(of: geometry.frame(in: .global)) {
-                            oldState, newState in
-                            rect = newState
-                        }
-                }
+        HStack(spacing: 4) {
+            BatteryIcon(
+                level: level,
+                // macOS shows the bolt whenever AC is attached, not only while
+                // IsCharging is true (optimized charging / low-watt adapters).
+                showBolt: isPluggedIn || isCharging
             )
+
+            if showPercentage {
+                Text("\(level)%")
+                    .fontWeight(.semibold)
+            }
         }
+        .font(.headline)
+        .foregroundStyle(.foregroundOutside)
+        .shadow(color: .foregroundShadowOutside, radius: 3)
+        .background(
+            GeometryReader { geometry in
+                Color.clear
+                    .onAppear {
+                        rect = geometry.frame(in: .global)
+                    }
+                    .onChange(of: geometry.frame(in: .global)) {
+                        oldState, newState in
+                        rect = newState
+                    }
+            }
+        )
         .experimentalConfiguration(cornerRadius: 15)
         .frame(maxHeight: .infinity)
         .background(.black.opacity(0.001))
+        .monospacedDigit()
         .onTapGesture {
             MenuBarPopup.show(rect: rect, id: "battery") { BatteryPopup() }
         }
-
-    }
-
-    private var batteryTextColor: Color {
-        if isCharging {
-            return .foregroundOutsideInvert
-        } else {
-            return level > warningLevel ? .foregroundOutsideInvert : .black
-        }
-    }
-
-    private var batteryColor: Color {
-        if isCharging {
-            return .green
-        } else {
-            if level <= criticalLevel {
-                return .red
-            } else if level <= warningLevel {
-                return .yellow
-            } else {
-                return .icon
-            }
-        }
     }
 }
 
-private struct BatteryText: View {
-    @EnvironmentObject var configProvider: ConfigProvider
-    var config: ConfigData { configProvider.config }
-    var showPercentage: Bool { config["show-percentage"]?.boolValue ?? true }
-
+/// Outline from `battery.0percent`, fill from a masked `battery.100percent` so the
+/// charge level uses the real SF Symbol geometry (no inset gaps) at a size that
+/// optically matches the other menu bar icons.
+private struct BatteryIcon: View {
     let level: Int
-    let isCharging: Bool
-    let isPluggedIn: Bool
+    let showBolt: Bool
 
-    var body: some View {
-        HStack(alignment: .center, spacing: -1) {
-            if showPercentage {
-                Text("\(level)")
-                    .font(.system(size: 12))
-                    .transition(.blurReplace)
-            }
-
-            if isCharging && level != 100 {
-                Image(systemName: "bolt.fill")
-                    .font(.system(size: showPercentage ? 8 : 10))
-            }
-
-            if !isCharging && isPluggedIn && level != 100 {
-                Image(systemName: "powerplug.portrait.fill")
-                    .font(.system(size: 8))
-                    .padding(.leading, 1)
-            }
-        }
-        .foregroundStyle(
-            showPercentage ? .foregroundOutsideInvert : .foregroundOutside
-        )
-        .fontWeight(.semibold)
-        .transition(.blurReplace)
-        .animation(.smooth, value: isCharging)
-        .frame(width: 26, height: 15)
-    }
-}
-
-private struct BatteryBodyView: View {
-    let mask: Bool
-
-    @EnvironmentObject var configProvider: ConfigProvider
-    var config: ConfigData { configProvider.config }
-    var showPercentage: Bool { config["show-percentage"]?.boolValue ?? true }
+    /// Slightly larger than the 14pt speaker/clock — battery glyphs read shorter optically.
+    private let pointSize: CGFloat = 17
 
     var body: some View {
         ZStack {
-            if showPercentage || !mask {
-                Image(systemName: "battery.0")
-                    .resizable()
-                    .scaledToFit()
-            }
-            if showPercentage || mask {
-                Rectangle()
-                    .clipShape(RoundedRectangle(cornerRadius: 2))
-                    .padding(.horizontal, showPercentage ? 3 : 4.4)
-                    .padding(.vertical, showPercentage ? 2 : 3.5)
-                    .offset(
-                        x: showPercentage ? -2 : -1.77,
-                        y: showPercentage ? 0 : 0.2)
+            Image(systemName: "battery.0percent")
+                .font(.system(size: pointSize))
+
+            Image(systemName: "battery.100percent")
+                .font(.system(size: pointSize))
+                .mask(alignment: .leading) {
+                    GeometryReader { geo in
+                        // Reveal from the leading edge through the filled portion of
+                        // the body. Values are fractions of the symbol view width:
+                        // the fill cavity starts ~after optical pad + left wall and
+                        // spans most of the body before the terminal.
+                        let fillStart = geo.size.width * 0.16
+                        let fillableWidth = geo.size.width * 0.58
+                        let revealedWidth =
+                            level <= 0
+                            ? 0
+                            : fillStart + fillableWidth * CGFloat(level) / 100
+
+                        Rectangle()
+                            .frame(width: revealedWidth)
+                            .frame(maxHeight: .infinity, alignment: .leading)
+                    }
+                }
+
+            if showBolt {
+                ChargingBolt()
+                    .offset(x: -1.5)
             }
         }
-        .compositingGroup()
+        .animation(.smooth, value: showBolt)
+        .animation(.smooth, value: level)
+    }
+}
+
+/// macOS-style charging bolt: outline glyph behind fill for a crisp even stroke.
+private struct ChargingBolt: View {
+    private let fillSize: CGFloat = 8
+
+    var body: some View {
+        ZStack {
+            Image(systemName: "bolt")
+                .font(.system(size: fillSize + 1.6, weight: .heavy))
+                .foregroundStyle(Color.black.opacity(0.55))
+
+            Image(systemName: "bolt.fill")
+                .font(.system(size: fillSize, weight: .bold))
+                .foregroundStyle(Color.foregroundOutside)
+        }
     }
 }
 

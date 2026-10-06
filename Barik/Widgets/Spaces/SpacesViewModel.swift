@@ -9,15 +9,38 @@ class SpacesViewModel: ObservableObject {
     private var updateWorkItem: DispatchWorkItem?
 
     init() {
-        let runningApps = NSWorkspace.shared.runningApplications.compactMap {
-            $0.localizedName?.lowercased()
+        let workspace = NSWorkspace.shared
+        
+        // Check both app names and bundle identifiers for more reliable detection
+        let hasYabai = workspace.runningApplications.contains { app in
+            app.localizedName?.lowercased() == "yabai" ||
+            app.bundleIdentifier?.lowercased().contains("yabai") == true
         }
-        if runningApps.contains("yabai") {
+        
+        let hasAerospace = workspace.runningApplications.contains { app in
+            app.localizedName?.lowercased() == "aerospace" ||
+            app.bundleIdentifier?.lowercased().contains("aerospace") == true
+        }
+        
+        let hasHyprspace = workspace.runningApplications.contains { app in
+            app.localizedName?.lowercased() == "hyprspace" ||
+            app.bundleIdentifier?.lowercased().contains("hyprspace") == true
+        }
+        
+        // Debug output
+        let runningApps = workspace.runningApplications.compactMap { $0.localizedName?.lowercased() }
+        print("🔍 Running apps (lowercased): \(runningApps.sorted())")
+        print("🔍 Has yabai: \(hasYabai), Has aerospace: \(hasAerospace), Has hyprspace: \(hasHyprspace)")
+        
+        if hasYabai {
             provider = AnySpacesProvider(YabaiSpacesProvider())
-        } else if runningApps.contains("aerospace") {
+            print("✅ Using Yabai provider")
+        } else if hasAerospace || hasHyprspace {
             provider = AnySpacesProvider(AerospaceSpacesProvider())
+            print("✅ Using Aerospace provider")
         } else {
             provider = nil
+            print("❌ No spaces provider found")
         }
         startMonitoring()
     }

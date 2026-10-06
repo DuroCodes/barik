@@ -25,13 +25,17 @@ struct TimeWidget: View {
         .autoconnect()
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: 0) {
-            Text(formattedTime(pattern: format, from: currentTime))
-                .fontWeight(.semibold)
-            if let event = calendarManager.nextEvent, calendarShowEvents {
-                Text(eventText(for: event))
-                    .opacity(0.8)
-                    .font(.subheadline)
+        HStack(spacing: 4) {
+            Image(systemName: "clock")
+                .font(.system(size: 14))
+            VStack(alignment: .trailing, spacing: 0) {
+                Text(formattedTime(pattern: format, from: currentTime))
+                    .fontWeight(.semibold)
+                if let event = calendarManager.nextEvent, calendarShowEvents {
+                    Text(eventText(for: event))
+                        .opacity(0.8)
+                        .font(.subheadline)
+                }
             }
         }
         .font(.headline)
@@ -68,7 +72,7 @@ struct TimeWidget: View {
     // Format the current time.
     private func formattedTime(pattern: String, from time: Date) -> String {
         let formatter = DateFormatter()
-        formatter.setLocalizedDateFormatFromTemplate(pattern)
+        formatter.dateFormat = pattern
 
         if let timeZone = timeZone,
             let tz = TimeZone(identifier: timeZone)
